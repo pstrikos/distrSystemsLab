@@ -43,8 +43,9 @@ try:
         global board, node_id
         success = False
         try:
-            print("You need to implement the modify function")
-            success = True
+            if str(entry_sequence) in board:
+                board[str(entry_sequence)] = modified_element
+                success = True
         except Exception as e:
             print e
         return success
@@ -93,7 +94,7 @@ try:
             new_entry = request.forms.get('entry')
 
             #  element_id = 1 # you need to generate a entry number
-            element_id = int(max(board)) + 1
+            element_id = int(max(board)) + 1 if bool(board) else 0 # assign 0 when the dict is empty
             add_new_element_to_store(element_id, new_entry)
 
             # you should propagate something
@@ -129,20 +130,19 @@ try:
         
         #call either delete or modify
 
-        if (delete_option == str(1)): 
+        if delete_option == str(1): 
             print "have to delete"
-        else:
-            print "not have to del"
-
             #delete for myself
-        delete_element_from_store(element_id, False) 
+            delete_element_from_store(element_id, False) 
             #propage to other nodes
-        thread = Thread(target=propagate_to_vessels,
-                            args=('/propagate/DELETE/' + str(element_id), {'entry': entry}, 'POST'))
-
-        #elif (delete_option = str(0)): 
-            #modify_element_in_store(element_id, entry, False)
-        
+            thread = Thread(target=propagate_to_vessels, args=('/propagate/DELETE/' + str(element_id), {'entry': entry}, 'POST'))
+        elif delete_option == str(0):
+            print "have to modify"
+            #modify for myself
+            modify_element_in_store(element_id, entry, False)
+            #propage to other nodes
+            thread = Thread(target=propagate_to_vessels, args=('/propagate/MODIFY/' + str(element_id), {'entry': entry}, 'POST'))
+          
         thread.daemon = True
         thread.start()
 
@@ -159,12 +159,8 @@ try:
             add_new_element_to_store(element_id, entry, True)
         elif (action == "DELETE"):
             delete_element_from_store(element_id, True)
-        
-        # Modify the board entry 
-        #modify_element_in_store(element_id, entry, True)
-        
-        # Delete the entry from the board
-        #delete_element_from_store(element_id, True)
+        elif (action == "MODIFY"):
+            modify_element_in_store(element_id, entry, True)
 
 
     # ------------------------------------------------------------------------------------------------------
