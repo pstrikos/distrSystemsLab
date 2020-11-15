@@ -32,6 +32,7 @@ try:
         global board, node_id
         success = False
         try:
+           # every key is handled as an str to have a consistency among every function operating on board
            if str(entry_sequence) not in board:
                 board[str(entry_sequence)] = element
                 success = True
@@ -43,6 +44,7 @@ try:
         global board, node_id
         success = False
         try:
+            # every key is handled as an str to have a consistency among every function operating on board
             if str(entry_sequence) in board:
                 board[str(entry_sequence)] = modified_element
                 success = True
@@ -54,11 +56,13 @@ try:
         global board, node_id
         success = False
         try:
+            # every key is handled as an str to have a consistency among every function operating on board
             if str(entry_sequence) in board:
                 del board[str(entry_sequence)]
                 success = True
-            else:
-                print str(entry_sequence) + " not in the board, sorry..."
+            # DEBUGGING
+            # else:
+               #  print str(entry_sequence) + " not in the board, sorry..."
             
         except Exception as e:
             print e
@@ -93,8 +97,10 @@ try:
         try:
             new_entry = request.forms.get('entry')
 
-            #  element_id = 1 # you need to generate a entry number
+            # increase by 1 the value of the maximum key to avoid conflicts 
             element_id = int(max(board)) + 1 if bool(board) else 0 # assign 0 when the dict is empty
+
+            # add it to this node
             add_new_element_to_store(element_id, new_entry)
 
             # you should propagate something
@@ -128,17 +134,17 @@ try:
 	    
         print "the delete option is ", delete_option
         
-        #call either delete or modify
+        #call either DELETE of MODIFY base on delete_option value
 
         if delete_option == str(1): 
             print "have to delete"
-            #delete for myself
+            #delete for this node
             delete_element_from_store(element_id, False) 
             #propage to other nodes
             thread = Thread(target=propagate_to_vessels, args=('/propagate/DELETE/' + str(element_id), {'entry': entry}, 'POST'))
         elif delete_option == str(0):
             print "have to modify"
-            #modify for myself
+            #modify for this node
             modify_element_in_store(element_id, entry, False)
             #propage to other nodes
             thread = Thread(target=propagate_to_vessels, args=('/propagate/MODIFY/' + str(element_id), {'entry': entry}, 'POST'))
