@@ -100,6 +100,15 @@ try:
             # increase by 1 the value of the maximum key to avoid conflicts 
             element_id = int(max(board)) + 1 if bool(board) else 0 # assign 0 when the dict is empty
 
+            try:
+                if (contact_leader() == True):
+                    print "node_Id = " + str(node_id)
+                    print "cont"
+                else:
+                    print "time for elections"
+            except Exception as e:
+                print e
+
             # add it to this node
             add_new_element_to_store(element_id, new_entry)
 
@@ -168,10 +177,24 @@ try:
         elif (action == "MODIFY"):
             modify_element_in_store(element_id, entry, True)
 
+    @app.post('/contactLeader')
+    def chating():
+        print "Received something"
 
     # ------------------------------------------------------------------------------------------------------
     # DISTRIBUTED COMMUNICATIONS FUNCTIONS
     # ------------------------------------------------------------------------------------------------------
+
+    def contact_leader():
+        global leader_ip
+        payload = None
+        path = '/contactLeader'
+        req = 'POST'
+
+        success = contact_vessel(leader_ip, path, payload, req)
+
+        return success
+
     def contact_vessel(vessel_ip, path, payload=None, req='POST'):
         # Try to contact another server (vessel) through a POST or GET, once
         success = False
@@ -204,16 +227,29 @@ try:
     # EXECUTION
     # ------------------------------------------------------------------------------------------------------
     def main():
-        global vessel_list, node_id, app
+        global vessel_list, node_id, app, leader_id, leader_ip
+        
+        leader_id = 6
+        leader_ip = '10.1.0.6'
 
         port = 80
         parser = argparse.ArgumentParser(description='Your own implementation of the distributed blackboard')
         parser.add_argument('--id', nargs='?', dest='nid', default=1, type=int, help='This server ID')
         parser.add_argument('--vessels', nargs='?', dest='nbv', default=1, type=int, help='The total number of vessels present in the system')
-        args = parser.parse_args()
+        args = parser.parse_args()   # Namespace(nbv=6, nid=<node id>)
         node_id = args.nid
         vessel_list = dict()
         # We need to write the other vessels IP, based on the knowledge of their number
+
+
+        """
+        try:
+            res = requests.post('http://10.1.0.1/chat', data="Hello from " + str(node_id))
+            print "Send message to 1"
+        except Exception as e:
+            print e
+        """
+
         for i in range(1, args.nbv+1):
             vessel_list[str(i)] = '10.1.0.{}'.format(str(i))
 
