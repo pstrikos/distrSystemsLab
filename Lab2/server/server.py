@@ -181,13 +181,15 @@ try:
 
     @app.post('/contactLeader')
     def chating():
+        global board
         print "adding new element to leaders board"
 
         element_id = int(max(board)) + 1 if bool(board) else 0 # assign 0 when the dict is empty
-        entry = request.forms.get('new_element')
+        entry = request.body.read()
+        board = json.loads(entry) # set
 
         # add it to the leader
-        add_new_element_to_store(element_id, entry)
+        # add_new_element_to_store(element_id, entry)
 
         # distribute the board to the rest
 
@@ -196,9 +198,13 @@ try:
     # DISTRIBUTED COMMUNICATIONS FUNCTIONS
     # ------------------------------------------------------------------------------------------------------
 
+    # contact_leader receives new element
+    # this element must now be added to the board which the has to be propagated to the rest of the notes
+    # and replace the old boards
     def contact_leader(new_element):
-        global leader_ip, node_id
-        payload = {'new_element':new_element}
+        global leader_ip, node_id, board
+        payload =  json.dumps(board)
+        # payload = {'new_element':new_element}
         path = '/contactLeader'
         req = 'POST'
 
