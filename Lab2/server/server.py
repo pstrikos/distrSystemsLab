@@ -100,9 +100,10 @@ try:
             # increase by 1 the value of the maximum key to avoid conflicts 
             element_id = int(max(board)) + 1 if bool(board) else 0 # assign 0 when the dict is empty
 
+            # contact leader with the element that is to be inserted
+            # that way the leader will add it to the dict and the pass it to its followers
             try:
-                if (contact_leader() == True):
-                    print "node_Id = " + str(node_id)
+                if (contact_leader(new_entry) == True):
                     print "cont"
                 else:
                     print "time for elections"
@@ -110,7 +111,8 @@ try:
                 print e
 
             # add it to this node
-            add_new_element_to_store(element_id, new_entry)
+            
+            ###add_new_element_to_store(element_id, new_entry)
 
             # you should propagate something
             # Please use threads to avoid blocking
@@ -120,10 +122,10 @@ try:
             # then call thread.start() to spawn the thread
 
             # Propagate action to all other nodes example :
-            thread = Thread(target=propagate_to_vessels,
-                            args=('/propagate/ADD/' + str(element_id), {'entry': new_entry}, 'POST'))
-            thread.daemon = True
-            thread.start()
+            #thread = Thread(target=propagate_to_vessels,
+            #                args=('/propagate/ADD/' + str(element_id), {'entry': new_entry}, 'POST'))
+            #thread.daemon = True
+            #thread.start()
             return True
         except Exception as e:
             print e
@@ -179,15 +181,24 @@ try:
 
     @app.post('/contactLeader')
     def chating():
-        print "Received something"
+        print "adding new element to leaders board"
+
+        element_id = int(max(board)) + 1 if bool(board) else 0 # assign 0 when the dict is empty
+        entry = request.forms.get('new_element')
+
+        # add it to the leader
+        add_new_element_to_store(element_id, entry)
+
+        # distribute the board to the rest
+
 
     # ------------------------------------------------------------------------------------------------------
     # DISTRIBUTED COMMUNICATIONS FUNCTIONS
     # ------------------------------------------------------------------------------------------------------
 
-    def contact_leader():
-        global leader_ip
-        payload = None
+    def contact_leader(new_element):
+        global leader_ip, node_id
+        payload = {'new_element':new_element}
         path = '/contactLeader'
         req = 'POST'
 
