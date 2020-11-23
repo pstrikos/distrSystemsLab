@@ -93,9 +93,12 @@ try:
     def client_add_received():
         '''Adds a new element to the board
         Called directly when a user is doing a POST request on /board'''
-        global board, node_id
+        global board, node_id, leader_ip
         try:
             new_entry = request.forms.get('entry')
+            payload = {'new_element':new_entry}
+            path = '/contactLeader'
+            req = 'POST'
 
             # increase by 1 the value of the maximum key to avoid conflicts 
             element_id = int(max(board)) + 1 if bool(board) else 0 # assign 0 when the dict is empty
@@ -103,7 +106,7 @@ try:
             # contact leader with the element that is to be inserted
             # that way the leader will add it to the dict and the pass it to its followers
             try:
-                if (contact_leader(new_entry) == True):
+                if (contact_vessel(leader_ip, path, payload, req) == True):
                     print "cont"
                 else:
                     print "time for elections"
@@ -217,6 +220,8 @@ try:
     # DISTRIBUTED COMMUNICATIONS FUNCTIONS
     # ------------------------------------------------------------------------------------------------------
 
+    # replaced contact_leader with contact_vessel that was already there
+    """
     # contact_leader receives new element
     # this element must now be added to the board which the has to be propagated to the rest of the notes
     # and replace the old boards
@@ -231,7 +236,7 @@ try:
         res = requests.post('http://{}{}'.format(leader_ip, path), data=payload)
 
         return success
-
+    """
     def contact_vessel(vessel_ip, path, payload=None, req='POST'):
         # Try to contact another server (vessel) through a POST or GET, once
         success = False
