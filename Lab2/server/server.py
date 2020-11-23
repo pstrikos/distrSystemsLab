@@ -185,13 +185,32 @@ try:
         print "adding new element to leaders board"
 
         element_id = int(max(board)) + 1 if bool(board) else 0 # assign 0 when the dict is empty
-        entry = request.body.read()
-        board = json.loads(entry) # set
+
+        # read the new element
+        new_element = request.forms.get('new_element')
+        # add new element to the leaders board
+        add_new_element_to_store(element_id, new_element, False)
+
+        # propagate new board to other vessels
+        thread = Thread(target=propagate_to_vessels,
+                        args=('/UPDATE_TABLE', json.dumps(board) , 'POST'))
+        thread.daemon = True
+        thread.start()
+
+        
+        #entry = request.body.read()
+        #board = json.loads(entry) # set
 
         # add it to the leader
         # add_new_element_to_store(element_id, entry)
 
         # distribute the board to the rest
+
+    # replace the old board in every follower with the updated received from the leader
+    @app.post('/UPDATE_TABLE')
+    def upd_table():
+        global board
+        board = json.loads(request.body.read())
 
 
     # ------------------------------------------------------------------------------------------------------
@@ -203,12 +222,13 @@ try:
     # and replace the old boards
     def contact_leader(new_element):
         global leader_ip, node_id, board
-        payload =  json.dumps(board)
-        # payload = {'new_element':new_element}
+        # payload =  json.dumps(board)
+        payload = {'new_element':new_element}
         path = '/contactLeader'
         req = 'POST'
 
-        success = contact_vessel(leader_ip, path, payload, req)
+        #success = contact_vessel(leader_ip, path, payload, req)
+        res = requests.post('http://{}{}'.format(leader_ip, path), data=payload)
 
         return success
 
