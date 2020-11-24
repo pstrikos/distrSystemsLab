@@ -88,16 +88,15 @@ try:
     
     #------------------------------------------------------------------------------------------------------
     
-    # You NEED to change the follow functions
     @app.post('/board')
     def client_add_received():
         '''Adds a new element to the board
         Called directly when a user is doing a POST request on /board'''
-        global board, node_id, leader_ip
+        global board, node_id, leader_ip, leader_id
         try:
             new_entry = request.forms.get('entry')
             payload = {'new_element':new_entry}
-            path = '/contactLeader'
+            path = '/contactLeader/ADD'
             req = 'POST'
 
             # increase by 1 the value of the maximum key to avoid conflicts 
@@ -106,29 +105,14 @@ try:
             # contact leader with the element that is to be inserted
             # that way the leader will add it to the dict and the pass it to its followers
             try:
+                # We check to determine whether the vessel initiating the adding is the leader
+                # Although this works, it's just a patch for now and there should be found a different way for it to be implemented
                 if (contact_vessel(leader_ip, path, payload, req) == True):
                     print "cont"
                 else:
                     print "time for elections"
             except Exception as e:
                 print e
-
-            # add it to this node
-            
-            ###add_new_element_to_store(element_id, new_entry)
-
-            # you should propagate something
-            # Please use threads to avoid blocking
-            # thread = Thread(target=???,args=???)
-            # For example: thread = Thread(target=propagate_to_vessels, args=....)
-            # you should create the thread as a deamon with thread.daemon = True
-            # then call thread.start() to spawn the thread
-
-            # Propagate action to all other nodes example :
-            #thread = Thread(target=propagate_to_vessels,
-            #                args=('/propagate/ADD/' + str(element_id), {'entry': new_entry}, 'POST'))
-            #thread.daemon = True
-            #thread.start()
             return True
         except Exception as e:
             print e
@@ -136,7 +120,7 @@ try:
 
     @app.post('/board/<element_id:int>/')
     def client_action_received(element_id):
-        global board, node_id
+        global board, node_i
         
         print "You receive an element"
         print "id is ", node_id
@@ -152,19 +136,15 @@ try:
 
         if delete_option == str(1): 
             print "have to delete"
-            #delete for this node
-            delete_element_from_store(element_id, False) 
-            #propage to other nodes
-            thread = Thread(target=propagate_to_vessels, args=('/propagate/DELETE/' + str(element_id), {'entry': entry}, 'POST'))
+            payload = {'delete_element_id' : element_id}
+            contact_vessel(leader_ip, '/contactLeader/DELETE', payload, 'POST') 
         elif delete_option == str(0):
             print "have to modify"
-            #modify for this node
-            modify_element_in_store(element_id, entry, False)
-            #propage to other nodes
-            thread = Thread(target=propagate_to_vessels, args=('/propagate/MODIFY/' + str(element_id), {'entry': entry}, 'POST'))
+            payload = {'modify_element_id' : element_id, 'new_element' : entry}
+            contact_vessel(leader_ip, '/contactLeader/MODIFY', payload, 'POST') 
           
-        thread.daemon = True
-        thread.start()
+        #thread.daemon = True
+        #thread.start()
 
     #With this function you handle requests from other nodes like add modify or delete
     @app.post('/propagate/<action>/<element_id>')
@@ -182,17 +162,27 @@ try:
         elif (action == "MODIFY"):
             modify_element_in_store(element_id, entry, True)
 
-    @app.post('/contactLeader')
-    def chating():
+    @app.post('/contactLeader/<action>')
+    def chating(action):
         global board
-        print "adding new element to leaders board"
 
-        element_id = int(max(board)) + 1 if bool(board) else 0 # assign 0 when the dict is empty
+        if (action == "ADD"):
+            print "adding new element to leaders board"
 
-        # read the new element
-        new_element = request.forms.get('new_element')
-        # add new element to the leaders board
-        add_new_element_to_store(element_id, new_element, False)
+            element_id = int(max(board)) + 1 if bool(board) else 0 # assign 0 when the dict is empty
+
+            # read the new element
+            new_element = request.forms.get('new_element')
+            # add new element to the leaders board
+            add_new_element_to_store(element_id, new_element, False)
+        elif (action == "DELETE"):
+            print "delete element from leader's board"
+            delete_element_from_store(str(request.forms.get('delete_element_id')), False)
+        elif (action == "MODIFY"):
+            print "modify element " 
+            element_id = request.forms.get('modify_element_id')
+            new_element = request.forms.get('new_element')
+            modify_element_in_store(element_id, new_element, False)
 
         # propagate new board to other vessels
         thread = Thread(target=propagate_to_vessels,
@@ -200,14 +190,6 @@ try:
         thread.daemon = True
         thread.start()
 
-        
-        #entry = request.body.read()
-        #board = json.loads(entry) # set
-
-        # add it to the leader
-        # add_new_element_to_store(element_id, entry)
-
-        # distribute the board to the rest
 
     # replace the old board in every follower with the updated received from the leader
     @app.post('/UPDATE_TABLE')
@@ -220,40 +202,28 @@ try:
     # DISTRIBUTED COMMUNICATIONS FUNCTIONS
     # ------------------------------------------------------------------------------------------------------
 
-    # replaced contact_leader with contact_vessel that was already there
-    """
-    # contact_leader receives new element
-    # this element must now be added to the board which the has to be propagated to the rest of the notes
-    # and replace the old boards
-    def contact_leader(new_element):
-        global leader_ip, node_id, board
-        # payload =  json.dumps(board)
-        payload = {'new_element':new_element}
-        path = '/contactLeader'
-        req = 'POST'
-
-        #success = contact_vessel(leader_ip, path, payload, req)
-        res = requests.post('http://{}{}'.format(leader_ip, path), data=payload)
-
-        return success
-    """
     def contact_vessel(vessel_ip, path, payload=None, req='POST'):
         # Try to contact another server (vessel) through a POST or GET, once
         success = False
         try:
             if 'POST' in req:
-                res = requests.post('http://{}{}'.format(vessel_ip, path), data=payload)
+                arg = 'http://' + str(vessel_ip) + path
+                thread = Thread(target=requests.post, args=(arg, payload))
+                thread.daemon = True
+                thread.start()
+                #res = requests.post('http://{}{}'.format(vessel_ip, path), data=payload)
             elif 'GET' in req:
                 res = requests.get('http://{}{}'.format(vessel_ip, path))
             else:
                 print 'Non implemented feature!'
             # result is in res.text or res.json()
-            print(res.text)
-            if res.status_code == 200:
-                success = True
+            #print(res.text)
+            #if res.status_code == 200:
+            #    success = True
         except Exception as e:
             print e
-        return success
+        #return success
+        return True
 
     def propagate_to_vessels(path, payload = None, req = 'POST'):
         global vessel_list, node_id
@@ -283,14 +253,6 @@ try:
         vessel_list = dict()
         # We need to write the other vessels IP, based on the knowledge of their number
 
-
-        """
-        try:
-            res = requests.post('http://10.1.0.1/chat', data="Hello from " + str(node_id))
-            print "Send message to 1"
-        except Exception as e:
-            print e
-        """
 
         for i in range(1, args.nbv+1):
             vessel_list[str(i)] = '10.1.0.{}'.format(str(i))
