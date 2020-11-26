@@ -1,9 +1,9 @@
 # coding=utf-8
 # ------------------------------------------------------------------------------------------------------
-# TDA596 - Lab 1
+# TDA596 - Lab 2
 # server/server.py
 # Input: Node_ID total_number_of_ID
-# Student: John Doe
+# Student: Panagiotis Strikos
 # ------------------------------------------------------------------------------------------------------
 import traceback
 import sys
@@ -125,10 +125,9 @@ try:
                     # skip the POST method and act directly
                     update_and_propagate('ADD', '', new_entry)
                 else:
-                    if (contact_vessel(leader_ip, path, payload, req) == True):
-                        print "cont"
-                    else:
-                        print "time for elections"
+                    if (contact_vessel(leader_ip, path, payload, req) != True):
+                        print "Time for Elections"
+                        elect_new_leader()
             except Exception as e:
                 print e
             return True
@@ -190,6 +189,14 @@ try:
         global board
         board = json.loads(request.body.read())
 
+    @app.post('/claim_leadership/<candidate_id>')
+    def claim_leader(candidate_id):
+        global node_id 
+        if int(node_id) > int(candidate_id):
+            print "Sorry, mine's bigger"
+        else:
+            print "You can be the leader..."
+        
 
     # ------------------------------------------------------------------------------------------------------
     # DISTRIBUTED COMMUNICATIONS FUNCTIONS
@@ -205,25 +212,18 @@ try:
         success = False
         try:
             if 'POST' in req:
-                """
-                arg = 'http://' + str(vessel_ip) + path
-                thread = Thread(target=requests.post, args=(arg, payload))
-                thread.daemon = True
-                thread.start()
-                """
                 res = requests.post('http://{}{}'.format(vessel_ip, path), data=payload)
             elif 'GET' in req:
                 res = requests.get('http://{}{}'.format(vessel_ip, path))
             else:
                 print 'Non implemented feature!'
             # result is in res.text or res.json()
-            #print(res.text)
-            #if res.status_code == 200:
-            #    success = True
+            # print(res.text)
+            if res.status_code == 200:
+                success = True
         except Exception as e:
             print e
-        #return success
-        return True
+        return success
 
     def propagate_to_vessels(path, payload = None, req = 'POST'):
         global vessel_list, node_id
@@ -234,6 +234,14 @@ try:
                 if not success:
                     print "\n\nCould not contact vessel {}\n\n".format(vessel_id)
 
+    def elect_new_leader():
+        global node_id
+        path = '/claim_leadership/' + str(node_id)
+        for vessel_id, vessel_ip in vessel_list.items():
+            if int(vessel_id) > int(node_id):
+                success = contact_vessel(vessel_ip, path)
+                if not success:
+                    print "\n\nCould not contact vessel {}\n\n".format(vessel_id)
         
     # ------------------------------------------------------------------------------------------------------
     # EXECUTION
@@ -241,8 +249,8 @@ try:
     def main():
         global vessel_list, node_id, app, leader_id, leader_ip
         
-        leader_id = 6
-        leader_ip = '10.1.0.6'
+        leader_id = -1
+        leader_ip = '10.1.0.' + str(leader_id)
 
         port = 80
         parser = argparse.ArgumentParser(description='Your own implementation of the distributed blackboard')
