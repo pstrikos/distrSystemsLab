@@ -61,13 +61,32 @@ try:
                 del board[str(entry_sequence)]
                 success = True
             # DEBUGGING
-            # else:
-               #  print str(entry_sequence) + " not in the board, sorry..."
+            else:
+                print str(entry_sequence) + " not in the board, sorry..."
             
         except Exception as e:
             print e
         return success
 
+    def update_and_propagate(action, element_id, new_element):
+        global board
+
+        if (action == "ADD"):
+            print "adding new element to leaders board"
+            new_id = int(max(board)) + 1 if bool(board) else 0 # assign 0 when the dict is empty
+            add_new_element_to_store(new_id, new_element, False)
+        elif (action == "DELETE"):
+            print "delete element from leader's board"
+            delete_element_from_store(element_id, False)
+        elif (action == "MODIFY"):
+            print "modify element " 
+            modify_element_in_store(element_id, new_element, False)
+
+        # propagate new board to other vessels
+        thread = Thread(target=propagate_to_vessels,
+                        args=('/UPDATE_TABLE', json.dumps(board) , 'POST'))
+        thread.daemon = True
+        thread.start()
     # ------------------------------------------------------------------------------------------------------
     # ROUTES
     # ------------------------------------------------------------------------------------------------------
@@ -95,7 +114,7 @@ try:
         global board, node_id, leader_ip, leader_id
         try:
             new_entry = request.forms.get('entry')
-            payload = {'new_element':new_entry}
+            payload = {'element_id': '', 'new_element':new_entry}
             path = '/contactLeader/ADD'
             req = 'POST'
 
@@ -122,25 +141,25 @@ try:
     def client_action_received(element_id):
         global board, node_i
         
-        print "You receive an element"
-        print "id is ", node_id
+        #print "You receive an element"
+        #print "id is ", node_id
         # Get the entry from the HTTP body
         entry = request.forms.get('entry')
         
         delete_option = request.forms.get('delete') 
 	    #0 = modify, 1 = delete
 	    
-        print "the delete option is ", delete_option
+        #print "the delete option is ", delete_option
         
         #call either DELETE of MODIFY base on delete_option value
 
         if delete_option == str(1): 
-            print "have to delete"
-            payload = {'delete_element_id' : element_id}
+            #print "have to delete"
+            payload = {'element_id' : element_id, 'new_element' : ''}
             contact_vessel(leader_ip, '/contactLeader/DELETE', payload, 'POST') 
         elif delete_option == str(0):
-            print "have to modify"
-            payload = {'modify_element_id' : element_id, 'new_element' : entry}
+            #print "have to modify"
+            payload = {'element_id' : element_id, 'new_element' : entry}
             contact_vessel(leader_ip, '/contactLeader/MODIFY', payload, 'POST') 
           
         #thread.daemon = True
@@ -165,30 +184,14 @@ try:
     @app.post('/contactLeader/<action>')
     def chating(action):
         global board
-
-        if (action == "ADD"):
-            print "adding new element to leaders board"
-
-            element_id = int(max(board)) + 1 if bool(board) else 0 # assign 0 when the dict is empty
-
-            # read the new element
-            new_element = request.forms.get('new_element')
-            # add new element to the leaders board
-            add_new_element_to_store(element_id, new_element, False)
-        elif (action == "DELETE"):
-            print "delete element from leader's board"
-            delete_element_from_store(str(request.forms.get('delete_element_id')), False)
-        elif (action == "MODIFY"):
-            print "modify element " 
-            element_id = request.forms.get('modify_element_id')
-            new_element = request.forms.get('new_element')
-            modify_element_in_store(element_id, new_element, False)
-
-        # propagate new board to other vessels
-        thread = Thread(target=propagate_to_vessels,
-                        args=('/UPDATE_TABLE', json.dumps(board) , 'POST'))
-        thread.daemon = True
-        thread.start()
+        
+        # Regardless of the <action>, we send both new_element and element_id
+        # ADD : the two values contain the place where the new value should be put in the board
+        # DELETE : element_id contains the id of the soon to be deleted element. new_element will be None
+        # MODIFY : element_id contains the id of the element we will modify, while the new_element holds its new value
+        new_element = request.forms.get('new_element')
+        element_id = request.forms.get('element_id')
+        update_and_propagate(action, element_id, new_element)
 
 
     # replace the old board in every follower with the updated received from the leader
