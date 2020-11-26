@@ -105,6 +105,18 @@ try:
         global board, node_id
         print board
         return template('server/boardcontents_template.tpl',board_title='Vessel {}'.format(node_id), board_dict=sorted(board.iteritems()))
+
+    @app.get('/claim_leadership/<candidate_id>')
+    def claim_leader(candidate_id):
+        global node_id 
+        print "node_id: " + str(node_id)
+        print "cand_id: " + str(candidate_id)
+        if int(node_id) > int(candidate_id):
+            elect_new_leader()
+            return str(node_id) + ": Sorry, mine's bigger"
+        else:
+            return str(node_id) + ": You can be the leader..."
+        
     
     #------------------------------------------------------------------------------------------------------
     
@@ -189,14 +201,6 @@ try:
         global board
         board = json.loads(request.body.read())
 
-    @app.post('/claim_leadership/<candidate_id>')
-    def claim_leader(candidate_id):
-        global node_id 
-        if int(node_id) > int(candidate_id):
-            print "Sorry, mine's bigger"
-        else:
-            print "You can be the leader..."
-        
 
     # ------------------------------------------------------------------------------------------------------
     # DISTRIBUTED COMMUNICATIONS FUNCTIONS
@@ -218,7 +222,7 @@ try:
             else:
                 print 'Non implemented feature!'
             # result is in res.text or res.json()
-            # print(res.text)
+            print(res.text)
             if res.status_code == 200:
                 success = True
         except Exception as e:
@@ -239,7 +243,7 @@ try:
         path = '/claim_leadership/' + str(node_id)
         for vessel_id, vessel_ip in vessel_list.items():
             if int(vessel_id) > int(node_id):
-                success = contact_vessel(vessel_ip, path)
+                success = contact_vessel(vessel_ip, path, None, 'GET')
                 if not success:
                     print "\n\nCould not contact vessel {}\n\n".format(vessel_id)
         
