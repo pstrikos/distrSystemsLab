@@ -21,12 +21,6 @@ try:
     #board stores all message on the system 
     board = {'0' : "Welcome to Distributed Systems Course"} 
 
-
-    # ------------------------------------------------------------------------------------------------------
-    # BOARD FUNCTIONS
-    # You will probably need to modify them
-    # ------------------------------------------------------------------------------------------------------
-    
     #This functions will add an new element
     def add_new_element_to_store(entry_sequence, element, is_propagated_call=False):
         global board, node_id
@@ -68,6 +62,11 @@ try:
             print e
         return success
 
+    # acts on the leader's board and the propagates it the every follower so they can update their copy
+    # Regardless of the <action>, we send both new_element and element_id to this function
+    # ADD    : the two values contain the place where the new value should be put in the board
+    # DELETE : element_id contains the id of the soon to be deleted element. new_element will be None
+    # MODIFY : element_id contains the id of the element we will modify, while the new_element holds its new value
     def update_and_propagate(action, element_id, new_element):
         global board
 
@@ -87,6 +86,8 @@ try:
                         args=('/UPDATE_TABLE', json.dumps(board) , 'POST'))
         thread.daemon = True
         thread.start()
+
+
     # ------------------------------------------------------------------------------------------------------
     # ROUTES
     # ------------------------------------------------------------------------------------------------------
@@ -118,18 +119,16 @@ try:
             path = '/contactLeader/ADD'
             req = 'POST'
 
-            # increase by 1 the value of the maximum key to avoid conflicts 
-            element_id = int(max(board)) + 1 if bool(board) else 0 # assign 0 when the dict is empty
-
             # contact leader with the element that is to be inserted
-            # that way the leader will add it to the dict and the pass it to its followers
             try:
-                # We check to determine whether the vessel initiating the adding is the leader
-                # Although this works, it's just a patch for now and there should be found a different way for it to be implemented
-                if (contact_vessel(leader_ip, path, payload, req) == True):
-                    print "cont"
+                if (node_id == leader_id): # this is the leader trying to act
+                    # skip the POST method and act directly
+                    update_and_propagate('ADD', '', new_entry)
                 else:
-                    print "time for elections"
+                    if (contact_vessel(leader_ip, path, payload, req) == True):
+                        print "cont"
+                    else:
+                        print "time for elections"
             except Exception as e:
                 print e
             return True
@@ -139,31 +138,26 @@ try:
 
     @app.post('/board/<element_id:int>/')
     def client_action_received(element_id):
-        global board, node_i
-        
-        #print "You receive an element"
-        #print "id is ", node_id
-        # Get the entry from the HTTP body
+        global board, node_id
         entry = request.forms.get('entry')
         
         delete_option = request.forms.get('delete') 
 	    #0 = modify, 1 = delete
-	    
-        #print "the delete option is ", delete_option
-        
         #call either DELETE of MODIFY base on delete_option value
-
         if delete_option == str(1): 
             #print "have to delete"
-            payload = {'element_id' : element_id, 'new_element' : ''}
-            contact_vessel(leader_ip, '/contactLeader/DELETE', payload, 'POST') 
+            if (node_id == leader_id): # this is the leader trying to act
+                update_and_propagate('DELETE', element_id, '')
+            else:
+                payload = {'element_id' : element_id, 'new_element' : ''}
+                contact_vessel(leader_ip, '/contactLeader/DELETE', payload, 'POST') 
         elif delete_option == str(0):
             #print "have to modify"
-            payload = {'element_id' : element_id, 'new_element' : entry}
-            contact_vessel(leader_ip, '/contactLeader/MODIFY', payload, 'POST') 
-          
-        #thread.daemon = True
-        #thread.start()
+            if (node_id == leader_id): # this is the leader trying to act
+                update_and_propagate('MODIFY', element_id, entry)
+            else:
+                payload = {'element_id' : element_id, 'new_element' : entry}
+                contact_vessel(leader_ip, '/contactLeader/MODIFY', payload, 'POST') 
 
     #With this function you handle requests from other nodes like add modify or delete
     @app.post('/propagate/<action>/<element_id>')
@@ -185,10 +179,6 @@ try:
     def chating(action):
         global board
         
-        # Regardless of the <action>, we send both new_element and element_id
-        # ADD : the two values contain the place where the new value should be put in the board
-        # DELETE : element_id contains the id of the soon to be deleted element. new_element will be None
-        # MODIFY : element_id contains the id of the element we will modify, while the new_element holds its new value
         new_element = request.forms.get('new_element')
         element_id = request.forms.get('element_id')
         update_and_propagate(action, element_id, new_element)
@@ -205,16 +195,23 @@ try:
     # DISTRIBUTED COMMUNICATIONS FUNCTIONS
     # ------------------------------------------------------------------------------------------------------
 
+    # A follower calls the leader with a request to act and the leader modifies the board 
+    # and then distributed its copy to the rest of the follower.
+    # There is one extreme case where the vessel trying to act IS the lead. 
+    # that way the leader will add it to the dict and the pass it to its followers
+    # In that scenario, it "skips" the line and modifies the board directly from here.
+    # Otherwise, if the leader uses a POST method to himself, the function will hang.
     def contact_vessel(vessel_ip, path, payload=None, req='POST'):
-        # Try to contact another server (vessel) through a POST or GET, once
         success = False
         try:
             if 'POST' in req:
+                """
                 arg = 'http://' + str(vessel_ip) + path
                 thread = Thread(target=requests.post, args=(arg, payload))
                 thread.daemon = True
                 thread.start()
-                #res = requests.post('http://{}{}'.format(vessel_ip, path), data=payload)
+                """
+                res = requests.post('http://{}{}'.format(vessel_ip, path), data=payload)
             elif 'GET' in req:
                 res = requests.get('http://{}{}'.format(vessel_ip, path))
             else:
