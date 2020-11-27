@@ -109,13 +109,13 @@ try:
     @app.get('/claim_leadership/<candidate_id>')
     def claim_leader(candidate_id):
         global node_id 
-        print "node_id: " + str(node_id)
-        print "cand_id: " + str(candidate_id)
+        # print "node_id: " + str(node_id)
+        # print "cand_id: " + str(candidate_id)
         if int(node_id) > int(candidate_id):
             elect_new_leader()
-            return str(node_id) + ": Sorry, mine's bigger"
+            return "denied"
         else:
-            return str(node_id) + ": You can be the leader..."
+            return "accepted"
         
     
     #------------------------------------------------------------------------------------------------------
@@ -195,6 +195,13 @@ try:
         update_and_propagate(action, element_id, new_element)
 
 
+    @app.post('/elections_completed/<new_leader_id>')
+    def update_leader(new_leader_id):
+        global leader_id, leader_ip
+        leader_id = int(new_leader_id)
+        leader_ip = '10.1.0.' + str(new_leader_id)
+        print "my new leader is " + str(leader_id)
+
     # replace the old board in every follower with the updated received from the leader
     @app.post('/UPDATE_TABLE')
     def upd_table():
@@ -239,14 +246,34 @@ try:
                     print "\n\nCould not contact vessel {}\n\n".format(vessel_id)
 
     def elect_new_leader():
-        global node_id
+        global node_id, leader_id, leader_ip
+        max_index = True
+        imtheone = False
         path = '/claim_leadership/' + str(node_id)
         for vessel_id, vessel_ip in vessel_list.items():
             if int(vessel_id) > int(node_id):
-                success = contact_vessel(vessel_ip, path, None, 'GET')
-                if not success:
-                    print "\n\nCould not contact vessel {}\n\n".format(vessel_id)
-        
+                max_index = False 
+                try:
+                    response = requests.get('http://{}{}'.format(vessel_ip, path))
+                    if (response.text == 'denied'):
+                        imtheone = False
+                        print "request denied from node " + str(vessel_id)
+                        break
+                except Exception as e:    
+                    #print e
+                    imtheone = True
+
+        if max_index == True or imtheone == True:
+            print "I AM THE LEADER NOW"
+            # assume power
+            leader_id = node_id
+            leader_ip = '10.1.0.' + str(node_id)
+            print "Im propagating to others"
+
+            thread = Thread(target=propagate_to_vessels,
+                            args=('/elections_completed/' + str(node_id), None, 'POST'))
+            thread.daemon = True
+            thread.start()
     # ------------------------------------------------------------------------------------------------------
     # EXECUTION
     # ------------------------------------------------------------------------------------------------------
