@@ -124,7 +124,7 @@ try:
     def client_add_received():
         '''Adds a new element to the board
         Called directly when a user is doing a POST request on /board'''
-        global board, node_id, leader_ip, leader_id
+        global board, node_id, leader_ip, leader_id, unsent_queue, unsent
         try:
             new_entry = request.forms.get('entry')
             payload = {'element_id': '', 'new_element':new_entry}
@@ -138,18 +138,22 @@ try:
                     update_and_propagate('ADD', '', new_entry)
                 else:
                     if (contact_vessel(leader_ip, path, payload, req) != True):
+                        unsent_data = {'path': path, 'payload' : payload}
+                        unsent = True # there is an unsent action now 
+                        unsent_queue = json.dumps(unsent_data)
                         print "Time for Elections"
                         elect_new_leader()
             except Exception as e:
                 print e
             return True
         except Exception as e:
-            print e
+            #print e
+            pass
         return False
 
     @app.post('/board/<element_id:int>/')
     def client_action_received(element_id):
-        global board, node_id
+        global board, node_id, unsent, unsent_queue
         entry = request.forms.get('entry')
         
         delete_option = request.forms.get('delete') 
@@ -157,18 +161,36 @@ try:
         #call either DELETE of MODIFY base on delete_option value
         if delete_option == str(1): 
             #print "have to delete"
-            if (node_id == leader_id): # this is the leader trying to act
-                update_and_propagate('DELETE', element_id, '')
-            else:
-                payload = {'element_id' : element_id, 'new_element' : ''}
-                contact_vessel(leader_ip, '/contactLeader/DELETE', payload, 'POST') 
+            try:
+                if (node_id == leader_id): # this is the leader trying to act
+                    update_and_propagate('DELETE', element_id, '')
+                else:
+                    path = '/contactLeader/DELETE'
+                    payload = {'element_id' : element_id, 'new_element' : ''}
+                    if (contact_vessel(leader_ip, path, payload, 'POST') != True):
+                        unsent_data = {'path': path, 'payload': payload}
+                        unsent = True
+                        unsent_queue = json.dumps(unsent_data)
+                        elect_new_leader()
+            except Exception as e:
+                pass
         elif delete_option == str(0):
             #print "have to modify"
-            if (node_id == leader_id): # this is the leader trying to act
-                update_and_propagate('MODIFY', element_id, entry)
-            else:
-                payload = {'element_id' : element_id, 'new_element' : entry}
-                contact_vessel(leader_ip, '/contactLeader/MODIFY', payload, 'POST') 
+            try:
+                if (node_id == leader_id): # this is the leader trying to act
+                    update_and_propagate('MODIFY', element_id, entry)
+                else:
+                    path = '/contactLeader/MODIFY'
+                    payload = {'element_id' : element_id, 'new_element' : entry}
+                    if (contact_vessel(leader_ip, path, payload, 'POST') != True):
+                        unsent_data = {'path': path, 'payload': payload}
+                        unsent = True
+                        unsent_queue = json.dumps(unsent_data)
+                        elect_new_leader()
+                        
+            except Exception as e:
+                pass
+
 
     #With this function you handle requests from other nodes like add modify or delete
     @app.post('/propagate/<action>/<element_id>')
@@ -197,10 +219,15 @@ try:
 
     @app.post('/elections_completed/<new_leader_id>')
     def update_leader(new_leader_id):
-        global leader_id, leader_ip
+        global leader_id, leader_ip, unsent_queue, unsent
         leader_id = int(new_leader_id)
         leader_ip = '10.1.0.' + str(new_leader_id)
         print "my new leader is " + str(leader_id)
+        if (unsent == True):
+            unsent = False
+            unsent_data = json.loads(unsent_queue)
+            contact_vessel(leader_ip, unsent_data['path'], unsent_data['payload'], 'POST')
+
 
     # replace the old board in every follower with the updated received from the leader
     @app.post('/UPDATE_TABLE')
@@ -233,7 +260,8 @@ try:
             if res.status_code == 200:
                 success = True
         except Exception as e:
-            print e
+            pass
+            #print e
         return success
 
     def propagate_to_vessels(path, payload = None, req = 'POST'):
@@ -278,10 +306,13 @@ try:
     # EXECUTION
     # ------------------------------------------------------------------------------------------------------
     def main():
-        global vessel_list, node_id, app, leader_id, leader_ip
+        global vessel_list, node_id, app, leader_id, leader_ip, unsent_queue, unsent
         
         leader_id = -1
         leader_ip = '10.1.0.' + str(leader_id)
+
+        unsent_queue = {}
+        unsent = False
 
         port = 80
         parser = argparse.ArgumentParser(description='Your own implementation of the distributed blackboard')
