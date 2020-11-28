@@ -160,37 +160,27 @@ try:
 	    #0 = modify, 1 = delete
         #call either DELETE of MODIFY base on delete_option value
         if delete_option == str(1): 
-            #print "have to delete"
-            try:
-                if (node_id == leader_id): # this is the leader trying to act
-                    update_and_propagate('DELETE', element_id, '')
-                else:
-                    path = '/contactLeader/DELETE'
-                    payload = {'element_id' : element_id, 'new_element' : ''}
-                    if (contact_vessel(leader_ip, path, payload, 'POST') != True):
-                        unsent_data = {'path': path, 'payload': payload}
-                        unsent = True
-                        unsent_queue = json.dumps(unsent_data)
-                        elect_new_leader()
-            except Exception as e:
-                pass
+            action = 'DELETE'
+            new_element = ''
+            path = '/contactLeader/DELETE'
         elif delete_option == str(0):
-            #print "have to modify"
-            try:
-                if (node_id == leader_id): # this is the leader trying to act
-                    update_and_propagate('MODIFY', element_id, entry)
-                else:
-                    path = '/contactLeader/MODIFY'
-                    payload = {'element_id' : element_id, 'new_element' : entry}
-                    if (contact_vessel(leader_ip, path, payload, 'POST') != True):
-                        unsent_data = {'path': path, 'payload': payload}
-                        unsent = True
-                        unsent_queue = json.dumps(unsent_data)
-                        elect_new_leader()
-                        
-            except Exception as e:
-                pass
+            action = 'MODIFY'
+            new_element = entry
+            path = '/contactLeader/MODIFY'
 
+        try:
+            if (node_id == leader_id): # this is the leader trying to act
+                update_and_propagate(action, element_id, new_element)
+            else:
+                payload = {'element_id' : element_id, 'new_element' : new_element}
+                if (contact_vessel(leader_ip, path, payload, 'POST') != True):
+                    unsent_data = {'path': path, 'payload': payload}
+                    unsent = True
+                    unsent_queue = json.dumps(unsent_data)
+                    print "Time for Elections"
+                    elect_new_leader()
+        except Exception as e:
+            pass
 
     #With this function you handle requests from other nodes like add modify or delete
     @app.post('/propagate/<action>/<element_id>')
