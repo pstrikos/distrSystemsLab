@@ -106,11 +106,11 @@ try:
         print board
         return template('server/boardcontents_template.tpl',board_title='Vessel {}'.format(node_id), board_dict=sorted(board.iteritems()))
 
+
+    # respond to another vessel claiming leadership
     @app.get('/claim_leadership/<candidate_id>')
     def claim_leader(candidate_id):
         global node_id 
-        # print "node_id: " + str(node_id)
-        # print "cand_id: " + str(candidate_id)
         if int(node_id) > int(candidate_id):
             elect_new_leader()
             return "denied"
@@ -120,6 +120,9 @@ try:
     
     #------------------------------------------------------------------------------------------------------
     
+    # If leader wants to perform an action. The board is updated directly and propagated to other vessels
+    # If follower wants to act, it tries to contact the leader to take care of the request for him. 
+    # When the leader is not there, the vessel initiates elections and stores the data for later use
     @app.post('/board')
     def client_add_received():
         '''Adds a new element to the board
@@ -151,6 +154,9 @@ try:
             pass
         return False
 
+    # same procedure as in ADD
+    # all three actions use the same two elements in their payload: new element and element id
+    # Not everything is always used
     @app.post('/board/<element_id:int>/')
     def client_action_received(element_id):
         global board, node_id, unsent, unsent_queue
@@ -182,7 +188,6 @@ try:
         except Exception as e:
             pass
 
-    #With this function you handle requests from other nodes like add modify or delete
     @app.post('/propagate/<action>/<element_id>')
     def propagation_received(action, element_id):
 	    #get entry from http body
@@ -198,6 +203,9 @@ try:
         elif (action == "MODIFY"):
             modify_element_in_store(element_id, entry, True)
 
+    # receives a request from a follower and sends it to the leader
+    # This function was needed to separate the actions that take place inside "update_and_propagate"
+    # That way it was possible to differentiate the action of a leader and a follower
     @app.post('/contactLeader/<action>')
     def chating(action):
         global board
@@ -207,6 +215,10 @@ try:
         update_and_propagate(action, element_id, new_element)
 
 
+    # after the eletion is finished, the leader sends its dissision to every node
+    # here, the global variables regarding the leader are updated
+    # In case the are unsent data left, a new contact to the leader is attempted
+    # CAREFUL: if the leader fails DURING election, there is a chance for the action to not be performed
     @app.post('/elections_completed/<new_leader_id>')
     def update_leader(new_leader_id):
         global leader_id, leader_ip, unsent_queue, unsent
@@ -263,6 +275,15 @@ try:
                 if not success:
                     print "\n\nCould not contact vessel {}\n\n".format(vessel_id)
 
+    # Performs the process of voting a new leader using the bully algortihm
+    # Two flags are used
+    #   max_index: indicates that the vessel has the maximum id
+    #   imtheone:  indicates that a vessel's request to become leader wasn't denied by anyone
+    # In both cases the vessel becomes the new leader and shares its decesion 
+    #
+    # Worst case: vessel 1 initiates voting. 1 contacts 2 and then stops, 2 contacts 3 and stops, and so on
+    # Complexity: O(n) where n is the number of vessels
+
     def elect_new_leader():
         global node_id, leader_id, leader_ip
         max_index = True
@@ -298,6 +319,7 @@ try:
     def main():
         global vessel_list, node_id, app, leader_id, leader_ip, unsent_queue, unsent
         
+        # initiate to a non-existant index
         leader_id = -1
         leader_ip = '10.1.0.' + str(leader_id)
 
