@@ -128,14 +128,47 @@ try:
     @app.route('/')
     def index():
         global board, node_id
+
+        #for key in sorted(board.keys()):
+        
+        # the key is an str so sorting will cause it to be inaccureate (ex '101' < '2')
+        # so it needs to be turned into int, get sorted, and then turned into an str again
+        i = 0
+        sorted_board = {}
+        for int_key in sorted([int(key) for key in board.keys()]):
+            sorted_board[str(i)] = board[str(int_key)]
+            i += 1
+
+        #sorted_board = {str(int_key):board[str(int_key)] for int_key in [int_key for int_key in sorted([int(key) for key in board.keys()])]}
+
+        print "+++++++++++++++++++++++++++++++++++++++"
+        print "sorted:"
+        print sorted_board
+        print "unsorted:"
+        print board
+        print "+++++++++++++++++++++++++++++++++++++++"
         return template('server/index.tpl', board_title='Vessel {}'.format(node_id),
-                board_dict=sorted({"0":board,}.iteritems()), members_name_string='YOUR NAME')
+                board_dict=sorted({"0":sorted_board,}.iteritems()), members_name_string='YOUR NAME')
 
     @app.get('/board')
     def get_board():
         global board, node_id
+
+        # the key is an str so sorting will cause it to be inaccureate (ex '101' < '2')
+        # so it needs to be turned into int, get sorted, and then turned into an str again
+        i = 0
+        sorted_board = {}
+        for int_key in sorted([int(key) for key in board.keys()]):
+            sorted_board[str(i)] = board[str(int_key)]
+            i += 1
+
+        print "+++++++++++++++++++++++++++++++++++++++"
+        print "sorted:"
+        print sorted_board
+        print "unsorted:"
         print board
-        return template('server/boardcontents_template.tpl',board_title='Vessel {}'.format(node_id), board_dict=sorted(board.iteritems()))
+        print "+++++++++++++++++++++++++++++++++++++++"
+        return template('server/boardcontents_template.tpl',board_title='Vessel {}'.format(node_id), board_dict=sorted(sorted_board.iteritems()))
 
 
     # respond to another vessel claiming leadership
@@ -163,10 +196,11 @@ try:
             new_entry = request.forms.get('entry')
             # in ADDition, each node has to calculate the new_id on its own.
             # otherwise new_ids might overlap 
-            payload = {'element_id': "", 'new_element':new_entry}
+            new_id = str(lclock) + str(node_id)
+            payload = {'element_id': new_id, 'new_element':new_entry}
             path = '/propagate/ADD/' + str(node_id)
 
-            new_id = int(max(board)) + 1 if bool(board) else 0 # assign 0 when the dict is empty
+            print "adding new element to myself at clock " + str(lclock)
             add_new_element_to_store(new_id, new_entry, False)
 
             thread = Thread(target=propagate_to_vessels,
@@ -215,21 +249,21 @@ try:
 
     @app.post('/propagate/<action>/<element_id>')
     def propagation_received(action, element_id):
+        global lclock
         print "received data from node " + str(element_id)
 
         received_data = json.loads(request.body.read())
-        received_clocks = received_data['clocks']
+        received_lclock = received_data['lclock']
         received_payload = received_data['payload']
+        received_new_id = json.loads(received_payload)['element_id']
         received_new_element = json.loads(received_payload)['new_element']
 
-        # received message so the clocks have to be updated
-        update_clocks(received_clocks)
-        # action happend (received) so I have to increase my clock
-        clocks[node_id] += 1
+        
+        lclock = max(lclock, received_lclock) + 1 #update my clock since I received something
 
         if action == "ADD":
-            new_id = int(max(board)) + 1 if bool(board) else 0 # assign 0 when the dict is empty
-            add_new_element_to_store(new_id, received_new_element)
+            print "adding received element at clock " + str(lclock) + " with id " + str(received_new_id)
+            add_new_element_to_store(received_new_id, received_new_element)
         else:
             print "operation {} is not defined".format(action)
 
@@ -297,15 +331,15 @@ try:
         return success
 
     def propagate_to_vessels(path, payload = None, req = 'POST'):
-        global vessel_list, node_id, clocks
+        global vessel_list, node_id, clocks, lclock
         
         # the clock has to be increased once in EVERY iteration
         # since every step of the loop is a new action
         for vessel_id, vessel_ip in vessel_list.items():
-            clocks[node_id] += 1
-            print "updated my clock to " + str(clocks[node_id]) + " and I'll message node " + str(vessel_id) 
-            send_data = {'clocks' : clocks, 'payload' : payload}
             if int(vessel_id) != node_id: # don't propagate to yourself
+                lclock += 1
+                print "updated my clock to " + str(lclock) + " and I'll message node " + str(vessel_id) 
+                send_data = {'lclock' : lclock, 'payload' : payload}
                 success = contact_vessel(vessel_ip, path, json.dumps(send_data), req)
                 if not success:
                     print "\n\nCould not contact vessel {}\n\n".format(vessel_id)
@@ -352,10 +386,11 @@ try:
     # EXECUTION
     # ------------------------------------------------------------------------------------------------------
     def main():
-        global vessel_list, node_id, app, leader_id, leader_ip, unsent_queue, unsent, clocks
-        
+        global vessel_list, node_id, app, leader_id, leader_ip, unsent_queue, unsent, clocks, lclock
+        #board_with_clocks
         # vector clocks
         clocks = {1:0, 2:0, 3:0, 4:0, 5:0, 6:0}
+        lclock = 1 # logic clock for this node, starts from 1 since there is already an element in the board when starting
 
         # initiate to a non-existant index
         leader_id = -1
@@ -373,6 +408,9 @@ try:
         vessel_list = dict()
         # We need to write the other vessels IP, based on the knowledge of their number
 
+
+        #elem_id = '0' + str(node_id)
+        #board_with_clocks = {elem_id : board['0']}
 
         for i in range(1, args.nbv+1):
             vessel_list[str(i)] = '10.1.0.{}'.format(str(i))
