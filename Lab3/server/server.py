@@ -87,6 +87,37 @@ try:
         thread.daemon = True
         thread.start()
 
+    def update_clocks(received_clocks):
+        global clocks
+        print "++++++++++++++++++++++++++++++++++++++"
+        print "clock before receiving: "
+        print clocks
+        print "received clock:         "
+        print eval(json.dumps(received_clocks))
+        new_is_bigger = False
+        old_is_bigger = False
+        for i in range (1,7):
+            if received_clocks[str(i)] >= clocks[i]:
+                new_is_bigger = True
+            else:
+                old_is_bigger = True
+
+            if i != node_id:
+                clocks[i] = max(clocks[i], received_clocks[str(i)])
+
+        print "new clocks:             " 
+        print clocks
+
+        if new_is_bigger and old_is_bigger:
+            print "Wrong order..."
+        elif new_is_bigger:
+            print "Correct order!!"
+        else:
+            print "Wrong order..."
+        print "++++++++++++++++++++++++++++++++++++++"
+
+
+            
 
     # ------------------------------------------------------------------------------------------------------
     # ROUTES
@@ -127,28 +158,22 @@ try:
     def client_add_received():
         '''Adds a new element to the board
         Called directly when a user is doing a POST request on /board'''
-        global board, node_id, leader_ip, leader_id, unsent_queue, unsent
+        global board, node_id, leader_ip, leader_id, unsent_queue, unsent, clocks
         try:
             new_entry = request.forms.get('entry')
-            payload = {'element_id': '', 'new_element':new_entry}
-            path = '/contactLeader/ADD'
-            req = 'POST'
+            # in ADDition, each node has to calculate the new_id on its own.
+            # otherwise new_ids might overlap 
+            payload = {'element_id': "", 'new_element':new_entry}
+            path = '/propagate/ADD/' + str(node_id)
 
-            # contact leader with the element that is to be inserted
-            try:
-                if (node_id == leader_id): # this is the leader trying to act
-                    # skip the POST method and act directly
-                    update_and_propagate('ADD', '', new_entry)
-                else:
-                    if (contact_vessel(leader_ip, path, payload, req) != True):
-                        unsent_data = {'path': path, 'payload' : payload}
-                        unsent = True # there is an unsent action now 
-                        unsent_queue = json.dumps(unsent_data)
-                        print "Time for Elections"
-                        elect_new_leader()
-            except Exception as e:
-                print e
-            return True
+            new_id = int(max(board)) + 1 if bool(board) else 0 # assign 0 when the dict is empty
+            add_new_element_to_store(new_id, new_entry, False)
+
+            thread = Thread(target=propagate_to_vessels,
+                            args=(path, json.dumps(payload) , 'POST'))
+            thread.daemon = True
+            thread.start()
+
         except Exception as e:
             #print e
             pass
@@ -190,18 +215,23 @@ try:
 
     @app.post('/propagate/<action>/<element_id>')
     def propagation_received(action, element_id):
-	    #get entry from http body
-        entry = request.forms.get('entry')
-        print "the action is", action
-        
-        # Handle requests
-        # for example action == "ADD":
-        if (action == "ADD"):
-            add_new_element_to_store(element_id, entry, True)
-        elif (action == "DELETE"):
-            delete_element_from_store(element_id, True)
-        elif (action == "MODIFY"):
-            modify_element_in_store(element_id, entry, True)
+        print "received data from node " + str(element_id)
+
+        received_data = json.loads(request.body.read())
+        received_clocks = received_data['clocks']
+        received_payload = received_data['payload']
+        received_new_element = json.loads(received_payload)['new_element']
+
+        # received message so the clocks have to be updated
+        update_clocks(received_clocks)
+        # action happend (received) so I have to increase my clock
+        clocks[node_id] += 1
+
+        if action == "ADD":
+            new_id = int(max(board)) + 1 if bool(board) else 0 # assign 0 when the dict is empty
+            add_new_element_to_store(new_id, received_new_element)
+        else:
+            print "operation {} is not defined".format(action)
 
     # receives a request from a follower and sends it to the leader
     # This function was needed to separate the actions that take place inside "update_and_propagate"
@@ -267,11 +297,16 @@ try:
         return success
 
     def propagate_to_vessels(path, payload = None, req = 'POST'):
-        global vessel_list, node_id
-
+        global vessel_list, node_id, clocks
+        
+        # the clock has to be increased once in EVERY iteration
+        # since every step of the loop is a new action
         for vessel_id, vessel_ip in vessel_list.items():
+            clocks[node_id] += 1
+            print "updated my clock to " + str(clocks[node_id]) + " and I'll message node " + str(vessel_id) 
+            send_data = {'clocks' : clocks, 'payload' : payload}
             if int(vessel_id) != node_id: # don't propagate to yourself
-                success = contact_vessel(vessel_ip, path, payload, req)
+                success = contact_vessel(vessel_ip, path, json.dumps(send_data), req)
                 if not success:
                     print "\n\nCould not contact vessel {}\n\n".format(vessel_id)
 
@@ -317,8 +352,11 @@ try:
     # EXECUTION
     # ------------------------------------------------------------------------------------------------------
     def main():
-        global vessel_list, node_id, app, leader_id, leader_ip, unsent_queue, unsent
+        global vessel_list, node_id, app, leader_id, leader_ip, unsent_queue, unsent, clocks
         
+        # vector clocks
+        clocks = {1:0, 2:0, 3:0, 4:0, 5:0, 6:0}
+
         # initiate to a non-existant index
         leader_id = -1
         leader_ip = '10.1.0.' + str(leader_id)
