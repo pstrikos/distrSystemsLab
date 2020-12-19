@@ -36,6 +36,7 @@ try:
                 success = True
         except Exception as e:
             print e
+
         return success
 
     def modify_element_in_store(entry_sequence, modified_element, is_propagated_call = False):
@@ -66,30 +67,6 @@ try:
             print e
         return success
 
-    # acts on the leader's board and the propagates it the every follower so they can update their copy
-    # Regardless of the <action>, we send both new_element and element_id to this function
-    # ADD    : the two values contain the place where the new value should be put in the board
-    # DELETE : element_id contains the id of the soon to be deleted element. new_element will be None
-    # MODIFY : element_id contains the id of the element we will modify, while the new_element holds its new value
-    def update_and_propagate(action, element_id, new_element):
-        global board
-
-        if (action == "ADD"):
-            print "adding new element to leaders board"
-            new_id = int(max(board)) + 1 if bool(board) else 0 # assign 0 when the dict is empty
-            add_new_element_to_store(new_id, new_element, False)
-        elif (action == "DELETE"):
-            print "delete element from leader's board"
-            delete_element_from_store(element_id, False)
-        elif (action == "MODIFY"):
-            print "modify element " 
-            modify_element_in_store(element_id, new_element, False)
-
-        # propagate new board to other vessels
-        thread = Thread(target=propagate_to_vessels,
-                        args=('/UPDATE_TABLE', json.dumps(board) , 'POST'))
-        thread.daemon = True
-        thread.start()
 
     def update_clocks(received_clocks):
         global clocks
@@ -145,13 +122,14 @@ try:
             sorted_board[str(int_key)] = board[str(int_key)]
 
 
-
+        """
         print "+++++++++++++++++++++++++++++++++++++++"
         print "sorted:"
         print sorted_board
         print "unsorted:"
         print board
         print "+++++++++++++++++++++++++++++++++++++++"
+        """
         return template('server/index.tpl', board_title='Vessel {}'.format(node_id),
                 board_dict=sorted({"0":sorted_board,}.iteritems()), members_name_string='YOUR NAME')
 
@@ -165,12 +143,14 @@ try:
         for int_key in sorted([int(key) for key in board.keys()]):
             sorted_board[str(int_key)] = board[str(int_key)]
 
+        """
         print "+++++++++++++++++++++++++++++++++++++++"
         print "sorted:"
         print sorted_board
         print "unsorted:"
         print board
         print "+++++++++++++++++++++++++++++++++++++++"
+        """
         return template('server/boardcontents_template.tpl',board_title='Vessel {}'.format(node_id), board_dict=sorted(sorted_board.iteritems()))
 
 
@@ -194,7 +174,7 @@ try:
     def client_add_received():
         '''Adds a new element to the board
         Called directly when a user is doing a POST request on /board'''
-        global board, node_id, leader_ip, leader_id, unsent_queue, unsent, clocks
+        global board, node_id, leader_ip, leader_id, unsent_queue, unsent, clocks, board_timing
         try:
             new_entry = request.forms.get('entry')
             # in ADDition, each node has to calculate the new_id on its own.
@@ -204,7 +184,9 @@ try:
             path = '/propagate/ADD/' + str(node_id)
 
             print "adding new element to myself at clock " + str(lclock)
-            add_new_element_to_store(new_id, new_entry, False)
+            if add_new_element_to_store(new_id, new_entry, False):
+                board_timing[new_id] = new_entry
+                print board_timing
 
             thread = Thread(target=propagate_to_vessels,
                             args=(path, json.dumps(payload) , 'POST'))
@@ -237,10 +219,8 @@ try:
                 new_element = entry
                 path = '/propagate/MODIFY/' + str(node_id)
                 print "modifying element " + str(element_id) + " for myself at clock " + str(lclock)
-                print element_id
-                print new_element
-                modify_element_in_store(element_id, new_element)
-
+                if modify_element_in_store(element_id, new_element):
+                    pass
             payload = {'element_id' : str(element_id), 'new_element' : new_element}
 
 
@@ -253,7 +233,7 @@ try:
 
     @app.post('/propagate/<action>/<element_id>')
     def propagation_received(action, element_id):
-        global lclock, board
+        global lclock, board, board_timing
         print "received data from node " + str(element_id)
 
         received_data = json.loads(request.body.read())
@@ -267,7 +247,9 @@ try:
 
         if action == "ADD":
             print "adding received element at clock " + str(lclock) + " with id " + str(received_id)
-            add_new_element_to_store(received_id, received_new_element)
+            if add_new_element_to_store(received_id, received_new_element):
+                board_timing[received_id] = received_new_element
+                print board_timing
         elif action == "MODIFY":
             print "modifying received element at clock " + str(lclock) + " with id " + str(received_id)
             modify_element_in_store(received_id, received_new_element)
