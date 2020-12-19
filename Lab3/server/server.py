@@ -20,6 +20,10 @@ try:
 
     #board stores all message on the system 
     board = {'0' : "Welcome to Distributed Systems Course"} 
+    # the time that an action occured to an element of the board.
+    # <element_id> : <clock>}. where <clock> is the clock of the node that made the change 
+
+    board_timing = {'0': '0'} 
 
     #This functions will add an new element
     def add_new_element_to_store(entry_sequence, element, is_propagated_call=False):
@@ -133,13 +137,14 @@ try:
         
         # the key is an str so sorting will cause it to be inaccureate (ex '101' < '2')
         # so it needs to be turned into int, get sorted, and then turned into an str again
-        i = 0
+
+        # Also I tried using a new key for sorted_board which starts from 0 and increments by one
+        # This causes later a problem when modifying/deleting because we get the new key instead of the real one
         sorted_board = {}
         for int_key in sorted([int(key) for key in board.keys()]):
-            sorted_board[str(i)] = board[str(int_key)]
-            i += 1
+            sorted_board[str(int_key)] = board[str(int_key)]
 
-        #sorted_board = {str(int_key):board[str(int_key)] for int_key in [int_key for int_key in sorted([int(key) for key in board.keys()])]}
+
 
         print "+++++++++++++++++++++++++++++++++++++++"
         print "sorted:"
@@ -156,11 +161,9 @@ try:
 
         # the key is an str so sorting will cause it to be inaccureate (ex '101' < '2')
         # so it needs to be turned into int, get sorted, and then turned into an str again
-        i = 0
         sorted_board = {}
         for int_key in sorted([int(key) for key in board.keys()]):
-            sorted_board[str(i)] = board[str(int_key)]
-            i += 1
+            sorted_board[str(int_key)] = board[str(int_key)]
 
         print "+++++++++++++++++++++++++++++++++++++++"
         print "sorted:"
@@ -218,52 +221,58 @@ try:
     # Not everything is always used
     @app.post('/board/<element_id:int>/')
     def client_action_received(element_id):
-        global board, node_id, unsent, unsent_queue
-        entry = request.forms.get('entry')
-        
-        delete_option = request.forms.get('delete') 
-	    #0 = modify, 1 = delete
-        #call either DELETE of MODIFY base on delete_option value
-        if delete_option == str(1): 
-            action = 'DELETE'
-            new_element = ''
-            path = '/contactLeader/DELETE'
-        elif delete_option == str(0):
-            action = 'MODIFY'
-            new_element = entry
-            path = '/contactLeader/MODIFY'
-
+        global board, node_id, unsent, unsent_queue, clocks
         try:
-            if (node_id == leader_id): # this is the leader trying to act
-                update_and_propagate(action, element_id, new_element)
-            else:
-                payload = {'element_id' : element_id, 'new_element' : new_element}
-                if (contact_vessel(leader_ip, path, payload, 'POST') != True):
-                    unsent_data = {'path': path, 'payload': payload}
-                    unsent = True
-                    unsent_queue = json.dumps(unsent_data)
-                    print "Time for Elections"
-                    elect_new_leader()
+            entry = request.forms.get('entry')
+            
+            delete_option = request.forms.get('delete') 
+            #0 = modify, 1 = delete
+            #call either DELETE of MODIFY base on delete_option value
+            if delete_option == str(1): 
+                new_element = ''
+                path = '/propagate/DELETE/' + str(node_id)
+                print "deleting element " + str(element_id) +  " for myself at clock " + str(lclock)
+                delete_element_from_store(element_id)
+            elif delete_option == str(0):
+                new_element = entry
+                path = '/propagate/MODIFY/' + str(node_id)
+                print "modifying element " + str(element_id) + " for myself at clock " + str(lclock)
+                print element_id
+                print new_element
+                modify_element_in_store(element_id, new_element)
+
+            payload = {'element_id' : str(element_id), 'new_element' : new_element}
+
+
+            thread = Thread(target=propagate_to_vessels,
+                            args=(path, json.dumps(payload) , 'POST'))
+            thread.daemon = True
+            thread.start()
         except Exception as e:
             pass
 
     @app.post('/propagate/<action>/<element_id>')
     def propagation_received(action, element_id):
-        global lclock
+        global lclock, board
         print "received data from node " + str(element_id)
 
         received_data = json.loads(request.body.read())
         received_lclock = received_data['lclock']
         received_payload = received_data['payload']
-        received_new_id = json.loads(received_payload)['element_id']
+        received_id = json.loads(received_payload)['element_id']
         received_new_element = json.loads(received_payload)['new_element']
 
-        
-        lclock = max(lclock, received_lclock) + 1 #update my clock since I received something
+        #update my clock since I received something
+        lclock = max(lclock, received_lclock) + 1 
 
         if action == "ADD":
-            print "adding received element at clock " + str(lclock) + " with id " + str(received_new_id)
-            add_new_element_to_store(received_new_id, received_new_element)
+            print "adding received element at clock " + str(lclock) + " with id " + str(received_id)
+            add_new_element_to_store(received_id, received_new_element)
+        elif action == "MODIFY":
+            print "modifying received element at clock " + str(lclock) + " with id " + str(received_id)
+            modify_element_in_store(received_id, received_new_element)
+        elif action == "DELETE":
+            delete_element_from_store(received_id)
         else:
             print "operation {} is not defined".format(action)
 
