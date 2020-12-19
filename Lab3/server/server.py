@@ -180,12 +180,12 @@ try:
             # in ADDition, each node has to calculate the new_id on its own.
             # otherwise new_ids might overlap 
             new_id = str(lclock) + str(node_id)
-            payload = {'element_id': new_id, 'new_element':new_entry}
+            payload = {'sender_clk' : str(lclock), 'element_id': '', 'new_element':new_entry}
             path = '/propagate/ADD/' + str(node_id)
 
             print "adding new element to myself at clock " + str(lclock)
             if add_new_element_to_store(new_id, new_entry, False):
-                board_timing[new_id] = new_entry
+                board_timing[str(new_id)] = str(new_id)
                 print board_timing
 
             thread = Thread(target=propagate_to_vessels,
@@ -208,21 +208,24 @@ try:
             entry = request.forms.get('entry')
             
             delete_option = request.forms.get('delete') 
-            #0 = modify, 1 = delete
-            #call either DELETE of MODIFY base on delete_option value
+            # DELETE
             if delete_option == str(1): 
                 new_element = ''
                 path = '/propagate/DELETE/' + str(node_id)
                 print "deleting element " + str(element_id) +  " for myself at clock " + str(lclock)
                 delete_element_from_store(element_id)
+            # MODIFY
             elif delete_option == str(0):
+
                 new_element = entry
                 path = '/propagate/MODIFY/' + str(node_id)
                 print "modifying element " + str(element_id) + " for myself at clock " + str(lclock)
-                if modify_element_in_store(element_id, new_element):
-                    pass
-            payload = {'element_id' : str(element_id), 'new_element' : new_element}
+                modify_element_in_store(element_id, new_element)
+                board_timing[str(element_id)] = str(lclock) + str(node_id)
+                print board_timing
 
+            # this clock will be part of every message sent from this node
+            payload = {'sender_clk' : str(lclock), 'element_id' : str(element_id), 'new_element' : new_element}
 
             thread = Thread(target=propagate_to_vessels,
                             args=(path, json.dumps(payload) , 'POST'))
@@ -239,6 +242,7 @@ try:
         received_data = json.loads(request.body.read())
         received_lclock = received_data['lclock']
         received_payload = received_data['payload']
+        received_sender_clk =json.loads(received_payload)['sender_clk'] 
         received_id = json.loads(received_payload)['element_id']
         received_new_element = json.loads(received_payload)['new_element']
 
@@ -247,12 +251,19 @@ try:
 
         if action == "ADD":
             print "adding received element at clock " + str(lclock) + " with id " + str(received_id)
-            if add_new_element_to_store(received_id, received_new_element):
-                board_timing[received_id] = received_new_element
+            # the new id is created so that conflicts between nodes are won from node with biggest id
+            new_id = received_sender_clk + element_id
+            if add_new_element_to_store(new_id, received_new_element):
+                board_timing[str(new_id)] = new_id
                 print board_timing
         elif action == "MODIFY":
             print "modifying received element at clock " + str(lclock) + " with id " + str(received_id)
-            modify_element_in_store(received_id, received_new_element)
+            # same as in addition, the new ad (if accepted) will combine the timing with the sender's id to resolve arguments
+            new_element_id = received_sender_clk + str(element_id)
+            if int(new_element_id) > int(board_timing[received_id]):
+                modify_element_in_store(received_id, received_new_element)
+                board_timing[str(received_id)] = new_element_id
+                print board_timing
         elif action == "DELETE":
             delete_element_from_store(received_id)
         else:
