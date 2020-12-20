@@ -115,7 +115,7 @@ try:
     def client_add_received():
         '''Adds a new element to the board
         Called directly when a user is doing a POST request on /board'''
-        global board, node_id, leader_ip, leader_id, unsent_queue, unsent, clocks, board_timing
+        global board, node_id, board_timing
         try:
             new_entry = request.forms.get('entry')
             # in ADDition, each node has to calculate the new_id on its own.
@@ -147,7 +147,7 @@ try:
     # This way everyone knows the chronological order of every modification 
     @app.post('/board/<element_id:int>/')
     def client_action_received(element_id):
-        global board, node_id, unsent, unsent_queue, clocks
+        global board, node_id
         try:
             entry = request.forms.get('entry')
             
@@ -282,7 +282,7 @@ try:
         return success
 
     def propagate_to_vessels(path, payload = None, req = 'POST'):
-        global vessel_list, node_id, clocks, lclock
+        global vessel_list, node_id,lclock
         
         # the clock has to be increased once in EVERY iteration
         # since every step of the loop is a new action
@@ -298,18 +298,10 @@ try:
     # EXECUTION
     # ------------------------------------------------------------------------------------------------------
     def main():
-        global vessel_list, node_id, app, leader_id, leader_ip, unsent_queue, unsent, clocks, lclock
-        #board_with_clocks
-        # vector clocks
-        clocks = {1:0, 2:0, 3:0, 4:0, 5:0, 6:0}
+        global vessel_list, node_id, app, lclock
+
         lclock = 1 # logic clock for this node, starts from 1 since there is already an element in the board when starting
 
-        # initiate to a non-existant index
-        leader_id = -1
-        leader_ip = '10.1.0.' + str(leader_id)
-
-        unsent_queue = {}
-        unsent = False
 
         port = 80
         parser = argparse.ArgumentParser(description='Your own implementation of the distributed blackboard')
@@ -321,8 +313,6 @@ try:
         # We need to write the other vessels IP, based on the knowledge of their number
 
 
-        #elem_id = '0' + str(node_id)
-        #board_with_clocks = {elem_id : board['0']}
 
         for i in range(1, args.nbv+1):
             vessel_list[str(i)] = '10.1.0.{}'.format(str(i))
